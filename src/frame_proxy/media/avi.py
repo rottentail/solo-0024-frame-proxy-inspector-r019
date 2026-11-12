@@ -211,41 +211,19 @@ def probe_avi(buffer: bytes) -> AviDescriptor:
     movi_start, movi_end = _list_payload(buffer, movi, b"movi")
 
     offsets: list[int] = []
-    while len(offsets) < total_frames:
-        ordinal = 0
-        selected_offset: int | None = None
-        previous_end = movi_start
-        for chunk in _iter_chunks(buffer, movi_start, movi_end):
-            if chunk.payload_offset < previous_end:
-                _fail("AVI media chunks overlap")
-            previous_end = chunk.end_offset
-            if chunk.tag == b"JUNK":
-                continue
-            if chunk.tag != b"00db":
-                _fail(f"unsupported AVI media chunk {chunk.tag!r}")
-            if chunk.payload_size != frame_payload_size:
-                _fail("AVI frame payload size does not match geometry")
-            if ordinal == len(offsets):
-                selected_offset = chunk.payload_offset
-                break
-            ordinal += 1
-        if selected_offset is None:
-            _fail(
-                "declared AVI frame count does not match media chunks",
-                code=ErrorCode.MEDIA_BOUNDS,
-            )
-        offsets.append(selected_offset)
-
-    observed_frames = 0
+    previous_end = movi_start
     for chunk in _iter_chunks(buffer, movi_start, movi_end):
+        if chunk.payload_offset < previous_end:
+            _fail("AVI media chunks overlap")
+        previous_end = chunk.end_offset
         if chunk.tag == b"JUNK":
             continue
         if chunk.tag != b"00db":
             _fail(f"unsupported AVI media chunk {chunk.tag!r}")
         if chunk.payload_size != frame_payload_size:
             _fail("AVI frame payload size does not match geometry")
-        observed_frames += 1
-    if observed_frames != total_frames:
+        offsets.append(chunk.payload_offset)
+    if len(offsets) != total_frames:
         _fail(
             "declared AVI frame count does not match media chunks",
             code=ErrorCode.MEDIA_BOUNDS,
@@ -263,5 +241,70 @@ def probe_avi(buffer: bytes) -> AviDescriptor:
         top_down=signed_height < 0,
         frame_offsets=tuple(offsets),
         handler="DIB",
+    )
+
+
+def descriptor_from_geometry(
+    *,
+    width: int,
+    height: int,
+    frame_count: int,
+    fps_numerator: int,
+    fps_denominator: int,
+    row_stride: int,
+    frame_payload_size: int,
+    top_down: bool,
+    frame_offsets: tuple[int, ...] | list[int],
+    handler: str = "DIB",
+) -> AviDescriptor:
+    """Rebind a descriptor from geometry persisted by a verified intake.
+
+    The values come from a clip record that ``probe_avi`` produced, so the
+    container does not need to be walked again. They are still re-checked for
+    internal consistency before any frame is served from them; callers pair
+    this with a digest check so the stored geometry and the stored media
+    remain two views of the same verified payload.
+    """
+    if width <= 0 or height <= 0 or frame_count <= 0:
+        _fail(
+            "stored frame geometry is inconsistent",
+            code=ErrorCode.FRAME_DECODE,
+        )
+    if fps_numerator <= 0 or fps_denominator <= 0:
+        _fail(
+            "stored frame rate ratio is inconsistent",
+            code=ErrorCode.FRAME_DECODE,
+        )
+    expected_stride = ((width * 3 + 3) // 4) * 4
+    if row_stride != expected_stride or frame_payload_size != row_stride * height:
+        _fail(
+            "stored frame geometry is inconsistent",
+            code=ErrorCode.FRAME_DECODE,
+        )
+    offsets = tuple(int(value) for value in frame_offsets)
+    if len(offsets) != frame_count:
+        _fail(
+            "stored frame offsets do not match the frame count",
+            code=ErrorCode.FRAME_DECODE,
+        )
+    previous_end = 0
+    for offset in offsets:
+        if offset < 8 or offset < previous_end:
+            _fail(
+                "stored frame offsets are not ordered",
+                code=ErrorCode.FRAME_DECODE,
+            )
+        previous_end = offset + frame_payload_size
+    return AviDescriptor(
+        width=width,
+        height=height,
+        frame_count=frame_count,
+        fps_numerator=fps_numerator,
+        fps_denominator=fps_denominator,
+        row_stride=row_stride,
+        frame_payload_size=frame_payload_size,
+        top_down=top_down,
+        frame_offsets=offsets,
+        handler=handler,
     )
 

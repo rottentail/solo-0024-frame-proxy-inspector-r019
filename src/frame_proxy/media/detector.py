@@ -57,13 +57,17 @@ def _scene_records(
     ends = [*cuts, frame_count]
     fingerprint_by_frame = dict(zip(sampled_frames, fingerprints))
     scenes: list[SceneRecord] = []
+    cursor = 0
 
     for scene_index, (start, end) in enumerate(zip(starts, ends)):
-        in_scene = [
-            (frame_index, fingerprint_by_frame[frame_index])
-            for frame_index in sampled_frames
-            if start <= frame_index < end
-        ]
+        # Sampled frames and cuts are ascending, so the frames inside this
+        # scene form one contiguous slice of the sample list.
+        in_scene: list[tuple[int, FrameFingerprint]] = []
+        while cursor < len(sampled_frames) and sampled_frames[cursor] < end:
+            frame_index = sampled_frames[cursor]
+            if frame_index >= start:
+                in_scene.append((frame_index, fingerprint_by_frame[frame_index]))
+            cursor += 1
         midpoint = start + (end - start) // 2
         if in_scene:
             representative_frame, _ = min(

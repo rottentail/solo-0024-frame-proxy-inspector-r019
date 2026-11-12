@@ -121,7 +121,9 @@ tools/
 ├── harness.py
 ├── check_clip_intake.py
 ├── check_shot_index.py
-└── check_contact_sheet.py
+├── check_contact_sheet.py
+├── check_restart_consistency.py
+└── check_scaling.py
 ```
 
 ## Build and workflow checks
@@ -139,6 +141,22 @@ PYTHONPATH=src:. python3 tools/check_clip_intake.py
 PYTHONPATH=src:. python3 tools/check_shot_index.py
 PYTHONPATH=src:. python3 tools/check_contact_sheet.py
 ```
+
+Two further checks guard the operational properties of those workflows:
+
+```bash
+PYTHONPATH=src:. python3 tools/check_restart_consistency.py
+PYTHONPATH=src:. python3 tools/check_scaling.py
+```
+
+`check_restart_consistency.py` verifies that a registered clip, its stored
+scene frame coordinates, and a rendered contact sheet still resolve to the
+same verified source bytes after the service restarts on the same data root,
+and that altered media is refused instead of reinterpreted.
+`check_scaling.py` doubles the frame count of a small repetitive fixture and
+compares container handling, on-demand frame extraction, and grid
+composition costs side by side; container costs must stay linear while
+per-frame extraction and fixed-grid composition stay flat.
 
 Each check starts a real loopback HTTP server, generates media through the
 production AVI writer, completes the named workflow, and verifies persisted

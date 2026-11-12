@@ -1,19 +1,47 @@
 from __future__ import annotations
 
+import hashlib
+
 from frame_proxy.config import Settings
 from frame_proxy.domain.errors import (
     ApplicationError,
     ErrorCode,
+    MediaValidationError,
     StateError,
 )
-from frame_proxy.domain.models import ContactSheetRecord
+from frame_proxy.domain.models import ClipRecord, ContactSheetRecord
 from frame_proxy.domain.policies import ContactSheetRequest, validate_identifier
 from frame_proxy.domain.transitions import transition_contact_sheet
-from frame_proxy.media.avi import probe_avi
+from frame_proxy.media.avi import AviDescriptor, descriptor_from_geometry, probe_avi
 from frame_proxy.media.contact import compose_grid, plan_grid
 from frame_proxy.media.frames import Frame, decode_frame_at
 from frame_proxy.media.ppm import parse_ppm_header
 from frame_proxy.storage.repository import FileRepository
+
+
+def _verified_descriptor(clip: ClipRecord, media: bytes) -> AviDescriptor:
+    """Resolve the frame geometry recorded at intake for this exact media.
+
+    The persisted offsets are the intake probe's own output, so rendering
+    reuses the same frame interpretation instead of re-walking the container.
+    Records written without usable offsets fall back to a fresh probe of the
+    digest-verified bytes.
+    """
+    try:
+        return descriptor_from_geometry(
+            width=clip.width,
+            height=clip.height,
+            frame_count=clip.frame_count,
+            fps_numerator=clip.fps_numerator,
+            fps_denominator=clip.fps_denominator,
+            row_stride=clip.row_stride,
+            frame_payload_size=clip.frame_payload_size,
+            top_down=clip.top_down,
+            frame_offsets=clip.frame_offsets,
+            handler=clip.handler,
+        )
+    except MediaValidationError:
+        return probe_avi(media)
 
 
 class ContactSheetService:
@@ -66,7 +94,12 @@ class ContactSheetService:
 
         try:
             media = self._repository.get_clip_media(clip.clip_id)
-            descriptor = probe_avi(media)
+            if hashlib.sha256(media).hexdigest() != clip.digest:
+                raise MediaValidationError(
+                    "stored clip digest does not match its record",
+                    code=ErrorCode.FRAME_DECODE,
+                )
+            descriptor = _verified_descriptor(clip, media)
             frames: dict[int, Frame] = {}
             for scene in inspection.scenes:
                 if request.selection == "first":
@@ -77,11 +110,12 @@ class ContactSheetService:
                     ) // 2
                 else:
                     frame_index = scene.representative_frame
-                frames[frame_index] = decode_frame_at(
-                    media,
-                    descriptor,
-                    frame_index,
-                )
+                if frame_index not in frames:
+                    frames[frame_index] = decode_frame_at(
+                        media,
+                        descriptor,
+                        frame_index,
+                    )
             result = compose_grid(
                 plan=plan,
                 scenes=tuple(inspection.scenes),

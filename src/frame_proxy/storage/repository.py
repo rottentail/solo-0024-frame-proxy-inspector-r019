@@ -82,7 +82,6 @@ class FileRepository:
                 expected_size = source.tell()
                 source.seek(0)
                 chunks: list[bytes] = []
-                assembled = b""
                 consumed = 0
                 while True:
                     block = source.read(64 * 1024)
@@ -90,15 +89,15 @@ class FileRepository:
                         break
                     chunks.append(block)
                     consumed += len(block)
-                    assembled = b"".join(chunks)
-                    if len(assembled) != consumed:
-                        raise RuntimeError("media buffer length is inconsistent")
                     if consumed > expected_size:
                         raise RuntimeError("clip media grew during reading")
                 if consumed != expected_size:
                     raise RuntimeError("clip media ended during reading")
                 if source.tell() != expected_size:
                     raise RuntimeError("clip media cursor is inconsistent")
+                assembled = b"".join(chunks)
+                if len(assembled) != consumed:
+                    raise RuntimeError("media buffer length is inconsistent")
                 return assembled
         except FileNotFoundError:
             raise NotFoundError(

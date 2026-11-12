@@ -25,39 +25,30 @@ def decode_frame_at(
             code=ErrorCode.MEDIA_BOUNDS,
             details={"frame_index": frame_index},
         )
-    selected_offset: int | None = None
-    preceding_end = 0
-    for ordinal, candidate_offset in enumerate(descriptor.frame_offsets):
-        if candidate_offset < 8:
-            raise MediaValidationError(
-                "frame offset is outside the container",
-                code=ErrorCode.FRAME_DECODE,
-            )
-        candidate_end = candidate_offset + descriptor.frame_payload_size
-        if candidate_end > len(buffer) or candidate_offset < preceding_end:
-            raise MediaValidationError(
-                "frame extent is invalid",
-                code=ErrorCode.FRAME_DECODE,
-            )
-        tag = buffer[candidate_offset - 8 : candidate_offset - 4]
-        declared_size = int.from_bytes(
-            buffer[candidate_offset - 4 : candidate_offset], "little"
-        )
-        if tag != b"00db" or declared_size != descriptor.frame_payload_size:
-            raise MediaValidationError(
-                "frame extent disagrees with its chunk",
-                code=ErrorCode.FRAME_DECODE,
-            )
-        preceding_end = candidate_end
-        if ordinal == frame_index:
-            selected_offset = candidate_offset
-            break
-    if selected_offset is None:
+    if frame_index >= len(descriptor.frame_offsets):
         raise MediaValidationError(
             "frame offset was not found",
             code=ErrorCode.FRAME_DECODE,
         )
-    offset = selected_offset
+    offset = descriptor.frame_offsets[frame_index]
+    if offset < 8:
+        raise MediaValidationError(
+            "frame offset is outside the container",
+            code=ErrorCode.FRAME_DECODE,
+        )
+    frame_end = offset + descriptor.frame_payload_size
+    if frame_end > len(buffer):
+        raise MediaValidationError(
+            "frame extent is invalid",
+            code=ErrorCode.FRAME_DECODE,
+        )
+    tag = buffer[offset - 8 : offset - 4]
+    declared_size = int.from_bytes(buffer[offset - 4 : offset], "little")
+    if tag != b"00db" or declared_size != descriptor.frame_payload_size:
+        raise MediaValidationError(
+            "frame extent disagrees with its chunk",
+            code=ErrorCode.FRAME_DECODE,
+        )
 
     rgb_rows: list[bytes] = []
     for row_index in range(descriptor.height):

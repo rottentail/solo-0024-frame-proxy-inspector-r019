@@ -1,6 +1,6 @@
 """Media probing, frame access, analysis, and PPM composition."""
 
-from frame_proxy.media.avi import AviDescriptor, probe_avi
+from frame_proxy.media.avi import AviDescriptor, descriptor_from_geometry, probe_avi
 from frame_proxy.media.contact import GridResult, compose_grid, plan_grid
 from frame_proxy.media.detector import AnalysisResult, analyze_frames
 from frame_proxy.media.frames import Frame, decode_frame_at
@@ -14,6 +14,7 @@ __all__ = [
     "analyze_frames",
     "compose_grid",
     "decode_frame_at",
+    "descriptor_from_geometry",
     "parse_ppm_header",
     "plan_grid",
     "probe_avi",

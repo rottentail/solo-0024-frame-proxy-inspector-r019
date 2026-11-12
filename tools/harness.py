@@ -30,15 +30,20 @@ class HttpResult:
 
 
 class RunningService:
-    def __init__(self) -> None:
+    def __init__(self, data_dir: str | Path | None = None) -> None:
         self._temporary: tempfile.TemporaryDirectory[str] | None = None
+        self._given_dir = Path(data_dir) if data_dir is not None else None
         self._server: FrameProxyServer | None = None
         self._thread: threading.Thread | None = None
         self._port = 0
 
     def __enter__(self) -> "RunningService":
-        self._temporary = tempfile.TemporaryDirectory(prefix="frame-proxy-check-")
-        settings = Settings(data_root=Path(self._temporary.name))
+        if self._given_dir is not None:
+            root = self._given_dir
+        else:
+            self._temporary = tempfile.TemporaryDirectory(prefix="frame-proxy-check-")
+            root = Path(self._temporary.name)
+        settings = Settings(data_root=root)
         router = build_router(settings)
         self._server = build_server(
             "127.0.0.1",
